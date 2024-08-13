@@ -64,6 +64,7 @@ type rawhop struct {
 	datatype string
 	idx      int
 	value    string
+	value2   string
 }
 
 type MTROutPut struct {
@@ -76,6 +77,53 @@ type MTROutPut struct {
 func (result *MTROutPut) Summarize(count int) {
 	for _, hop := range result.Hops {
 		hop.Summarize(count)
+	}
+}
+
+// Calculate per hop RTT difference to the previous hop
+func (result *MTROutPut) Diff(count int) {
+	hopCount := result.HopCount - 1
+
+	for i := 0; i < hopCount; i++ {
+		if len(result.Hops[i].IP) == 0 {
+			fmt.Println("Hop: *")
+		} else {
+			fmt.Println(result.Hops[i].IP[0])
+			if len(result.Hops[i].Timings) != count {
+				fmt.Printf("expected %d timings, got %d for hop: %s\n", count, len(result.Hops[i].Timings), result.Hops[i].IP[0])
+			}
+			fmt.Print(result.Hops[i].Timings)
+		}
+		fmt.Println()
+	}
+
+	// create a 2D slice with hopCount rows and count columns to store the difference
+	diff := make([][]time.Duration, hopCount)
+	for i := 0; i < hopCount; i++ {
+		diff[i] = make([]time.Duration, count)
+		for j := 0; j < count; j++ {
+			diff[i][j] = 0
+		}
+	}
+
+	// calculate the difference from the current hop to the previous hop
+	for i := 0; i < hopCount; i++ {
+		for j := 0; j < count; j++ {
+			if i > 0 {
+				if len(result.Hops[i-1].Timings) > 0 {
+					diff[i][j] = result.Hops[i].Timings[j] - result.Hops[i-1].Timings[j]
+				} else {
+					diff[i][j] = result.Hops[i].Timings[j]
+				}
+			}
+		}
+	}
+
+	// print the difference
+	fmt.Println("\nRTT difference to the previous hop:")
+	for i := 0; i < hopCount; i++ {
+		fmt.Print(diff[i])
+		fmt.Println()
 	}
 }
 
@@ -107,8 +155,8 @@ func NewMTROutPut(raw, target string, count int) (*MTROutPut, error) {
 	for _, line := range strings.Split(raw, "\n") {
 		things := strings.Split(line, " ")
 		if len(things) == 3 || (len(things) == 4 && things[0] == "p") {
-			//log.Println(things)
 			idx, err := strconv.Atoi(things[1])
+			fmt.Println(things)
 			if err != nil {
 				return nil, err
 			}
@@ -116,6 +164,9 @@ func NewMTROutPut(raw, target string, count int) (*MTROutPut, error) {
 				datatype: things[0],
 				idx:      idx,
 				value:    things[2],
+			}
+			if len(things) == 4 {
+				data.value2 = things[3]
 			}
 			rawhops = append(rawhops, data)
 			//Number of hops = highest index+1
@@ -131,12 +182,50 @@ func NewMTROutPut(raw, target string, count int) (*MTROutPut, error) {
 			IP:      make([]string, 0),
 			Host:    make([]string, 0),
 		}
-		//hop.Timings = make([]time.Duration, 0)
 	}
+
+	/*
+		hostline:
+		h <pos> <host IP>
+
+		xmitline:
+		x <pos> <seqnum>
+
+		pingline:
+		p <pos> <pingtime (ms)> <seqnum>
+
+		dnsline:
+		d <pos> <hostname>
+
+		timestampline:
+		t <pos> <pingtime> <timestamp>
+
+		mplsline:
+		m <pos> <label> <traffic_class> <bottom_stack> <ttl>
+	*/
+
+	/*
+		stats = {
+			"hop1": {
+				"30001": 0,
+				"30002": 0,
+			},
+			"hop2": {
+				"30003": 0,
+				"30004": 0,
+			},
+		}
+	*/
+
+	stats := make(map[string]map[string]int)
+
 	for _, data := range rawhops {
 		switch data.datatype {
 		case "h":
 			out.Hops[data.idx].IP = append(out.Hops[data.idx].IP, data.value)
+		case "x":
+			// xmitline
+			stats[data.value][data.value2] = 0
 		//case "d":
 		//Not entirely sure if multiple IPs. Better use -n in mtr and resolve later in summarize.
 		//out.Hops[data.idx].Host = append(out.Hops[data.idx].Host, data.value)
@@ -145,6 +234,7 @@ func NewMTROutPut(raw, target string, count int) (*MTROutPut, error) {
 			if err != nil {
 				return nil, err
 			}
+			stats[data.value][data.value2] = t
 			out.Hops[data.idx].Timings = append(out.Hops[data.idx].Timings, time.Duration(t)*time.Microsecond)
 		}
 	}

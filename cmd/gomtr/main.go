@@ -34,11 +34,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for _, hop := range result.Hops {
-		fmt.Print(hop.Timings)
-		hop.Summarize(flagCount)
-	}
+	result.Diff(flagCount)
 
-	// fmt.Println("mtr --report like output")
-	fmt.Println(result.String())
+	// for _, hop := range result.Hops {
+	// 	if len(hop.IP) == 0 {
+	// 		fmt.Println("Hop: *")
+	// 	} else {
+	// 		fmt.Println("Hop:", hop.IP[0])
+	// 		fmt.Print(hop.Timings)
+	// 	}
+	// 	fmt.Println()
+	// 	hop.Summarize(flagCount)
+	// }
+
+	// fmt.Println(result.String())
 }
