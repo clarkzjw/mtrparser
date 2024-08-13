@@ -1,66 +1,16 @@
 package main
 
-//usage: go run mtrparser.go <hostname or ip>
-
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"math"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
-
-	flag "github.com/spf13/pflag"
 )
-
-func doesipv6() bool {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return false
-	}
-	localipv6 := []string{"fc00::/7", "::1/128", "fe80::/10"}
-
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			ip6 := ipnet.IP.To16()
-			ip4 := ipnet.IP.To4()
-			if ip6 != nil && ip4 == nil {
-				local := false
-				for _, r := range localipv6 {
-					_, cidr, _ := net.ParseCIDR(r)
-					if cidr.Contains(ip6) {
-						local = true
-					}
-				}
-				if !local {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func stdDev(timings []time.Duration, avg time.Duration) time.Duration {
-	//taken from https://github.com/ae6rt/golang-examples/blob/master/goeg/src/statistics_ans/statistics.go
-	if len(timings) < 2 {
-		return time.Duration(0)
-	}
-	mean := float64(avg)
-	total := 0.0
-	for _, t := range timings {
-		number := float64(t)
-		total += math.Pow(number-mean, 2)
-	}
-	variance := total / float64(len(timings)-1)
-	std := math.Sqrt(variance)
-	return time.Duration(std)
-}
 
 type MtrHop struct {
 	IP       []string
@@ -102,32 +52,6 @@ func (hop *MtrHop) Summarize(count int) {
 	hop.ResolveIPs()
 }
 
-type lookupresult struct {
-	addr []string
-	err  error
-}
-
-func reverselookup(ip string) string {
-	result := ""
-	ch := make(chan lookupresult, 1)
-	go func() {
-		addr, err := net.LookupAddr(ip)
-		ch <- lookupresult{addr, err}
-	}()
-	select {
-	case res := <-ch:
-		if res.err == nil {
-			//log.Println(addr[0], err)
-			if len(res.addr) > 0 {
-				result = res.addr[0]
-			}
-		}
-	case <-time.After(time.Second * 1):
-		result = ""
-	}
-	return result
-}
-
 // ResolveIPs populates the DNS hostnames of the IP in each Hop.
 func (hop *MtrHop) ResolveIPs() {
 	hop.Host = make([]string, len(hop.IP))
@@ -136,16 +60,16 @@ func (hop *MtrHop) ResolveIPs() {
 	}
 }
 
-type MTROutPut struct {
-	Hops     []*MtrHop
-	Target   string //Saving this FYI
-	HopCount int
-}
-
 type rawhop struct {
 	datatype string
 	idx      int
 	value    string
+}
+
+type MTROutPut struct {
+	Hops     []*MtrHop
+	Target   string //Saving this FYI
+	HopCount int
 }
 
 // Summarize calls Summarize on each Hop
@@ -153,19 +77,6 @@ func (result *MTROutPut) Summarize(count int) {
 	for _, hop := range result.Hops {
 		hop.Summarize(count)
 	}
-}
-
-// Helper function to trim or pad a string
-func trimpad(input string, size int) string {
-	if len(input) > size {
-		input = input[0:size]
-	}
-	return fmt.Sprintf("%[1]*[2]s ", size*-1, input)
-}
-
-// Return milliseconds as floating point from duration
-func durms(d time.Duration) float64 {
-	return float64(d.Nanoseconds()) / (1000 * 1000)
 }
 
 // String returns output similar to --report option in mtr
@@ -285,15 +196,7 @@ func ExecuteMTRContext(ctx context.Context, target string, IPv string, count int
 		}
 	}
 	var cmd *exec.Cmd
-	/*
-		if IPv == "" {
-			if doesipv6() {
-				IPv = "6"
-			} else {
-				IPv = "4"
-			}
-		}
-	*/
+
 	switch IPv {
 	case "4":
 		if realtgt == "" {
@@ -362,37 +265,4 @@ func ExecuteMTRContext(ctx context.Context, target string, IPv string, count int
 		return nil, errors.New(stderr.String())
 	}
 	return NewMTROutPut(out.String(), realtgt, 10)
-}
-
-var flagInterval float64
-var flagCount int
-var flagTarget string
-var flagIPVersion string
-
-func init() {
-	flag.Float64Var(&flagInterval, "interval", 1, "Interval (ms) between mtr packets")
-	flag.IntVar(&flagCount, "count", 10, "Number of mtr packets to send")
-	flag.StringVar(&flagTarget, "target", "", "Destination address")
-	flag.StringVar(&flagIPVersion, "ip", "4", "IP version to use (4 or 6)")
-
-	flag.Parse()
-}
-
-func main() {
-	if flagTarget == "" {
-		log.Fatal("Need mtr destination")
-	}
-	fmt.Println("Interval:", flagInterval, "Count:", flagCount)
-
-	result, err := ExecuteMTR(flagTarget, flagIPVersion, flagCount, flagInterval)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, hop := range result.Hops {
-		hop.Summarize(flagCount)
-	}
-
-	fmt.Println("mtr --report like output")
-	fmt.Println(result.String())
 }
