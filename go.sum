@@ -1,2 +1,2 @@
-github.com/clarkzjw/mtrparser v0.0.0-20170117120949-576a258b1590 h1:T6OI2drIX6Keg7wIK+5FRTiY6LboZL0SvknUODqfHCg=
-github.com/clarkzjw/mtrparser v0.0.0-20170117120949-576a258b1590/go.mod h1:+f5m/De0j2Ze6IwvU/mQeNax4Kr7BGiBYiv4fGM4qDA=
+github.com/spf13/pflag v1.0.5 h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=
+github.com/spf13/pflag v1.0.5/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
