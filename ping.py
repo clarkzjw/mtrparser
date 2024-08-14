@@ -1,36 +1,44 @@
 import time
+import json
+from pprint import pprint
 from datetime import datetime, timedelta
 from multiprocessing import Process
+from threading import Thread
 
 from icmplib import ping
+from matplotlib import pyplot as plt
 
 
 hops = [
     "192.168.1.1",
     "100.64.0.1",
-    "172.16.248.4",
-    "149.19.109.14",
-    "210.171.224.96",
-    "142.251.233.111",
-    "142.250.224.213",
-    "142.250.196.142"
+    "149.19.109.47",
+    "172.217.18.100"
 ]
 
-# hops = [
-#     "192.168.1.254",
-#     "10.31.36.1",
-#     "154.11.2.254",
-#     "154.11.15.73",
-#     "1.1.1.1"
-# ]
+
+result = []
 
 def do_ping():
-    while True:
-        for hop in hops:
-            print("Now: {}, Pinging {}...".format(datetime.now(), hop))
-            host = ping(hop, count=1)
-            print(host.min_rtt)
-            time.sleep(0.01)
+    end_time = datetime.now() + timedelta(seconds=14)
+
+    with open("ping-{}.json".format(datetime.now().strftime("%Y%m%d-%H%M%S")), "w") as f:
+        while True:
+            if datetime.now() >= end_time:
+                break
+
+            current_round = dict.fromkeys(hops, 0)
+            for hop in hops:
+                print("Now: {}, Pinging {}...".format(datetime.now(), hop))
+                host = ping(hop, count=1, timeout=0.5)
+                if host.min_rtt == 0:
+                    break
+                current_round[hop] = host.min_rtt
+                print(host.min_rtt)
+                time.sleep(0.01)
+            result.append(current_round)
+
+        json.dump(result, f, indent=2)
 
 
 def get_start_time():
@@ -53,11 +61,36 @@ def start_thread_at(func, target_time):
         print("Waiting for {} seconds...".format(delay))
         time.sleep(delay)
 
-    process = Process(target=func)
-    process.start()
-    process.join(14)
-    process.terminate()
+    th = Thread(target=func)
+    th.start()
+    th.join()
+
+
+def plot():
+    diff = {}
+    with open("ping.json", "r") as f:
+        data = json.load(f)
+        for round in data:
+            print(round)
+            # calculate the difference between each hop to their previous hop
+            for i in range(1, len(hops)):
+                key = "{} -> {}".format(hops[i-1], hops[i])
+                if key not in diff:
+                    diff[key] = []
+                rtt_diff = round[hops[i]] - round[hops[i-1]]
+                if rtt_diff < 0:
+                    rtt_diff = 0
+                diff[key].append(rtt_diff)
+    pprint(diff)
+    # boxplot the difference
+    fig = plt.figure(figsize=(15, 10))
+    plt.boxplot(diff.values())
+    plt.xticks(range(1, len(diff.keys())+1), diff.keys(), rotation=0)
+    plt.tight_layout()
+    plt.savefig("ping.png")
+    plt.close()
 
 
 if __name__ == "__main__":
     start_thread_at(do_ping, get_start_time())
+    plot()
