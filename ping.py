@@ -1,6 +1,9 @@
+import os
 import time
 import json
+from math import fabs
 from pprint import pprint
+from pathlib import Path
 from datetime import datetime, timedelta
 from multiprocessing import Process
 from threading import Thread
@@ -17,25 +20,33 @@ hops = [
 ]
 
 
+def boxplot_position():
+    positions = {}
+    for i in range(1, len(hops)):
+        key = "{}\n-> {}".format(hops[i-1], hops[i])
+        positions[key] = len(hops) - i
+    return positions
+
 result = []
+
 
 def do_ping():
     end_time = datetime.now() + timedelta(seconds=14)
 
     with open("ping-{}.json".format(datetime.now().strftime("%Y%m%d-%H%M%S")), "w") as f:
         while True:
+            time.sleep(0.01)
             if datetime.now() >= end_time:
                 break
 
             current_round = dict.fromkeys(hops, 0)
             for hop in hops:
-                print("Now: {}, Pinging {}...".format(datetime.now(), hop))
+                #print("Now: {}, Pinging {}...".format(datetime.now(), hop))
                 host = ping(hop, count=1, timeout=0.5)
                 if host.min_rtt == 0:
                     break
                 current_round[hop] = host.min_rtt
-                print(host.min_rtt)
-                time.sleep(0.01)
+                #print(host.min_rtt)
             result.append(current_round)
 
         json.dump(result, f, indent=2)
@@ -68,29 +79,43 @@ def start_thread_at(func, target_time):
 
 def plot():
     diff = {}
-    with open("ping.json", "r") as f:
-        data = json.load(f)
-        for round in data:
-            print(round)
-            # calculate the difference between each hop to their previous hop
-            for i in range(1, len(hops)):
-                key = "{} -> {}".format(hops[i-1], hops[i])
-                if key not in diff:
-                    diff[key] = []
-                rtt_diff = round[hops[i]] - round[hops[i-1]]
-                if rtt_diff < 0:
-                    rtt_diff = 0
-                diff[key].append(rtt_diff)
-    pprint(diff)
-    # boxplot the difference
-    fig = plt.figure(figsize=(15, 10))
-    plt.boxplot(diff.values())
-    plt.xticks(range(1, len(diff.keys())+1), diff.keys(), rotation=0)
+
+    roundCount = 0
+    path = Path("./latency")
+    for dirpath, dirnames, files in os.walk(path):
+        if len(files) != 0:
+            for f in files:
+                if f.endswith(".json") and f.startswith("ping"):
+                    roundCount += 1
+                    # if roundCount > 1:
+                        # break
+                    filename = os.path.join(dirpath, f)
+                    print(filename)
+                    with open(filename, "r") as jsonfile:
+                        data = json.load(jsonfile)
+                        for round in data:
+                            for i in range(1, len(hops)):
+                                key = "{}\n-> {}".format(hops[i-1], hops[i])
+                                if key not in diff:
+                                    diff[key] = []
+                                rtt_diff = round[hops[i]] - round[hops[i-1]]
+                                if rtt_diff < 0:
+                                    continue
+                                diff[key].append(fabs(rtt_diff))
+    plt.figure(figsize=(10, 5))
+    pos = boxplot_position()
+    for position, column in enumerate(pos):
+        print(min(diff[column]), max(diff[column]))
+        plt.boxplot(diff[column], positions=[len(pos) - position], vert=False, meanline=True, meanprops={"color": "red"}, showmeans=False, showfliers=False)
+
+    # plt.xlim(-5, 50)
+    plt.xlabel("Latency (ms)")
+    plt.yticks(range(1, len(diff.keys())+1), reversed(diff.keys()), rotation=0)
     plt.tight_layout()
     plt.savefig("ping.png")
     plt.close()
 
 
 if __name__ == "__main__":
-    start_thread_at(do_ping, get_start_time())
+    # start_thread_at(do_ping, get_start_time())
     plot()
